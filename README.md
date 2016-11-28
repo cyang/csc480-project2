@@ -412,7 +412,13 @@ vagrant@precise64:~/480-project2$ nm -D /lib/x86_64-linux-gnu/libc.so.6 | grep '
 0000000000044320 W system
 ```
 
-Finally, we modify the hexdump such that the return points to the pop RDI, and ret. Note that the first 130 zeroes equate to 65 bytes which is just enough to fill the rest of the buffer after "/bin/sh" in name and the RBP register. Afterward, we set the value at top of stack of the next stack frame to be the address of name buffer, which is the execution of "/bin/sh". When pop RDI occurs, that pointer of "/bin/sh" is stored in RDI. Finally the ret will jump to the system() call because the return address of that new stack frame has been altered!
+Finally, we modify the hexdump to perform the attack, which occurs when the instruction pointer is at the main() return. Beginning at the main() return location, we will have (0x7ffff7a1d000+0x22a12), followed by 0x7fffffffe5c0, and (0x7ffff7a1d000+0x44320).
+
+Note that the first 130 zeroes equate to 65 bytes which is just enough to fill the rest of the name buffer after "/bin/sh" and the RBP register. Then the return address is hijacked to point to the gadget of pop RDI and RET. Instruction pointer will jump to (0x7ffff7a1d000+0x22a12) and RSP is incremented to the location after the return address location with value 0x7fffffffe5c0.
+
+When the instruction pointer reaches pop RDI in the gadget, RDI will store the value at the RSP, which will be the address of "/bin/sh" (0x7fffffffe5c0). We to increment RSP so that it contains the value of (0x7ffff7a1d000+0x44320).
+ 
+When the instruction pointer reaches the RET in the gadget, the instruction pointer jumps to where the RSP is (0x7ffff7a1d000+0x44320). Remember that the value at RSP is the location of the system() libc function, so the instruction pointer will jump to there and call it using RDI as a parameter ("/bin/sh"). 
 ```
 vagrant@precise64:~/480-project2$ (echo -n /bin/sh | xxd -p; printf %0130d 0; printf %016x $((0x7ffff7a1d000+0x22a12)) | tac -rs..; printf %016x 0x7fffffffe5c0 | tac -rs..; printf %016x $((0x7ffff7a1d000+0x44320)) | tac -rs..) | xxd -r -p | setarch `arch` -R ./victim
 0x7fffffffe5c0
@@ -425,6 +431,8 @@ ls
 pip  shell  shell.c  shellcode  shell.dSYM  victim  victim.c
 ```
 
+
+This video explains the example very nicely except call stack address should be flipped as the ESP is incremented when popping: https://youtu.be/XZa0Yu6i_ew?t=183
 
 ### Conclusion
 Despite various security measures placed by the compiler to prevent buffer overflows, we were still able to pull off the attack using return-oriented programming.
