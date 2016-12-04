@@ -412,11 +412,25 @@ vagrant@precise64:~/480-project2$ nm -D /lib/x86_64-linux-gnu/libc.so.6 | grep '
 0000000000044320 W system
 ```
 
-Finally, we modify the hexdump to perform the attack, which occurs when the instruction pointer is at the main() return. Beginning at the main() return location, we will have (0x7ffff7a1d000+0x22a12), followed by 0x7fffffffe5c0, and (0x7ffff7a1d000+0x44320).
+Finally, we modify the hexdump to perform the attack, which occurs when the instruction pointer is at the main() return. Beginning at the main() return location, we will have 0x7ffff7a1d000+0x22a12 (location of gadget), followed by 0x7fffffffe5c0(address of "/bin/sh" or name buffer), and 0x7ffff7a1d000+0x44320 (location of system()).
+
+
+### Call stack Layout
+#### Bottom (Higher address)
+    addr of system()
+----------------------
+    addr of "/bin/sh"
+----------------------
+    ret -> addr of gadget (pop rdi; ret)
+----------------------
+     EBP Register
+----------------------
+     64 bytes buf
+#### Top (Lower address)
 
 Note that the first 130 zeroes equate to 65 bytes which is just enough to fill the rest of the name buffer after "/bin/sh" and the RBP register. Then the return address is hijacked to point to the gadget of pop RDI and RET. Instruction pointer will jump to (0x7ffff7a1d000+0x22a12) and RSP is incremented to the location after the return address location with value 0x7fffffffe5c0.
 
-When the instruction pointer reaches pop RDI in the gadget, RDI will store the value at the RSP, which will be the address of "/bin/sh" (0x7fffffffe5c0). We to increment RSP so that it contains the value of (0x7ffff7a1d000+0x44320).
+When the instruction pointer reaches pop RDI in the gadget, RDI will store the value at the RSP, which will be the address of "/bin/sh" (0x7fffffffe5c0). We need to increment RSP so that it contains the value of (0x7ffff7a1d000+0x44320).
  
 When the instruction pointer reaches the RET in the gadget, the instruction pointer jumps to where the RSP is (0x7ffff7a1d000+0x44320). Remember that the value at RSP is the location of the system() libc function, so the instruction pointer will jump to there and call it using RDI as a parameter ("/bin/sh"). 
 ```
