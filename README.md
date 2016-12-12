@@ -5,7 +5,7 @@ Followed tutorial found at: http://crypto.stanford.edu/~blynn/rop/
 ### My environment
 I am running on Ubuntu 12.04 LTS (GNU/Linux 3.2.0-23-generic x86_64) via Vagrant.
 
-Near the end, I switch to
+Near the end, I switch to Ubuntu 16.04.1 LTS.
 
 ### The shell game
 syscall - programmatic way in which a program can request a service from the kernel of the OS.
@@ -446,7 +446,7 @@ Segmentation fault (core dumped)
 
 Unfortunately, this solution doesn't work. At the top of the tutorial, it's mentioned that in newer versions of Linux the stack is organized differently. From here on, I am following the tutorial from https://github.com/finallyjustice/security/blob/master/rop/demo1/README.txt:
 
-For this tutorial, I moved to Ubunutu 16.04.1 LTS.
+For this next part, I moved to Ubunutu 16.04.1 LTS.
 
 Please note, the new stack layout is:
 
