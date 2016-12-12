@@ -97,6 +97,7 @@ victim.c is a buffer overflow example, since given a large enough input, char na
 
 
 The two errors encountered were:
+
 1.
 ```
 *** stack smashing detected ***: ./victim terminated
